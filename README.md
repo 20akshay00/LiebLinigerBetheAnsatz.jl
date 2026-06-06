@@ -3,7 +3,7 @@
 `LiebLinigerBetheAnsatz` is an implementation of the Bethe Ansatz solution for the Lieb-Liniger model of 1D interacting bosons.
 
 $$
-H = -\sum_{j=1}^{N} \left[\frac{\partial^2}{\partial x_j^2} + 2c\sum_{j<i} \delta(x_j - x_i)\right]
+H = -\sum_{j=1}^{N} \left[\frac{\partial^2}{\partial x_j^2} + 2c\sum_{j \lt i} \delta(x_j - x_i)\right]
 $$
 
 where $\hbar = 2m = 1$. 
