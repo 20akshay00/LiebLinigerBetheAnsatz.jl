@@ -45,7 +45,7 @@ The excitation spectrum may also be extracted as follows.
 </p>
 
 ```julia
-# Compute Type I (holes) and Type II (particles) excitations
+# compute Type I (holes) and Type II (particles) excitations
 p_h, E_h, p_p, E_p = excitation_spectrum(state, num_points=20)
 ```
 
@@ -57,7 +57,7 @@ For systems with a fixed number of particles $N$, the package solves the discret
 using LiebLinigerBetheAnsatz
 
 L, c, N = 10.0, 1.0, 5
-# Options: bc=:periodic (default) or bc=:hardwall
+# bc = [:periodic, :hardwall]
 state = solve(FiniteLLProblem(L, c, N=N, bc=:hardwall))
 
 E = energy(state)
@@ -74,7 +74,7 @@ V(x) = 0.5x^2
 μ, c = 5.0, 10.0
 domain = (-5.0, 5.0)
 
-# Solve for the non-uniform density profile
+# solve for the non-uniform density profile
 state = solve(NonUniformLLProblem(c=c, V=V, μ=μ, domain=domain))
 
 dens = particle_density(state) # returns a function ρ(x)
