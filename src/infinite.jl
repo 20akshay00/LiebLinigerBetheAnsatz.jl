@@ -1,0 +1,305 @@
+# solves f(x) - λ ∫([K(x,y) + K(x,-y)] f(y), 0, Q) dy = g(x)
+# assumes that ρ(k) = ρ(-k) always
+"""
+    solve_quasimomentum_distribution(c, Q; N=100, quadrature_rule=gausslobatto)
+
+Solve the Lieb-Liniger integral equation for the root density distribution ρ(k) on the interval [0, Q].
+Uses a symmetrized kernel to account for the parity of the distribution.
+
+# Arguments
+- `c`: Interaction strength (coupling constant).
+- `Q`: Fermi rapidity (integration cutoff).
+- `N`: Number of quadrature points for the integral solver.
+- `quadrature_rule`: Function providing the quadrature nodes and weights.
+
+# Returns
+- `rho`: The solved density distribution function ρ(k).
+- `particle_density`: Total physical density n.
+- `energy_density`: Total energy density E/L.
+"""
+function solve_quasimomentum_distribution(c, Q; N=default_quadrature_points(), quadrature_rule=default_quadrature_rule())
+    # original kernel: 2c / (c^2 + (k-q)^2)
+    # symmetrized:     K(k, q) + K(k, -q)
+    kernel(k, q) = c / π * (1 / (c^2 + (k - q)^2) + 1 / (c^2 + (k + q)^2))
+    kernel_traced(k) = 1 / π * (atan((k + Q) / c) - atan((k - Q) / c))
+
+    rho, xs, ws = solve(
+        ModifiedQuadratureSolver(quadrature_rule(N)),
+        kernel,
+        (x) -> 1. / (2π),
+        kernel_traced,
+        0.,
+        Q
+    )
+
+    # density n = 2 * ∫(ρ(k), 0, Q) dk
+    particle_density = 2 * dot(ws, rho.(xs))
+
+    # energy E/L = 2 * ∫(k^2 ρ(k), 0, Q) dk
+    energy_density = 2 * dot(ws, (xs .^ 2) .* rho.(xs))
+
+    return rho, particle_density, energy_density
+end
+
+"""
+    get_ground_state(; γ=nothing, μ=nothing, c=1.0, Ql=1e-8, Qh=1., maxiter=100, kwargs...)
+
+Find the ground state properties by solving for the Fermi rapidity Q that satisfies the 
+target interaction γ (canonical) or chemical potential μ (grand canonical).
+
+# Arguments
+- `γ`: Target dimensionless interaction parameter (c/n).
+- `μ`: Target chemical potential.
+- `c`: Coupling constant.
+- `Ql`: Lower bound for the bisection search of Q.
+- `Qh`: Initial upper bound for the bisection search of Q.
+- `maxiter`: Maximum iterations to bracket the root for Q.
+- `kwargs`: Keyword arguments passed to the distribution solver.
+
+# Returns
+- `rho`: The ground state density distribution.
+- `e`: Energy density.
+- `n`: Particle density.
+- `Q`: The determined Fermi rapidity.
+"""
+function get_ground_state(; γ=nothing, μ=nothing, c=1.0, Ql=1e-8, Qh=1., maxiter=100, kwargs...)
+    if !isnothing(γ) && isnothing(μ)
+        # particle density
+        target = c / γ
+        metric_func = Q -> solve_quasimomentum_distribution(c, Q; kwargs...)[2]
+    elseif !isnothing(μ) && isnothing(γ)
+        # chemical potential
+        target = μ
+        metric_func = Q -> compute_chemical_potential(c, Q; kwargs...)
+    else
+        error("Cannot specify both γ (canonical) and μ (grand canonical) at once!")
+    end
+
+    function residual(Q)
+        (Q <= 1e-9) && return -target
+        return metric_func(Q) - target
+    end
+
+    # root finding through bisection algorithm
+    iter = 0
+    while residual(Qh) < 0
+        Qh *= 2.0
+        iter += 1
+        (iter > maxiter) && error("Could not bracket root (Target too high?)")
+    end
+
+    Q = find_zero(residual, (Ql, Qh), Bisection())
+
+    rho, n, e = solve_quasimomentum_distribution(c, Q; kwargs...)
+    return rho, e, n, Q
+end
+
+"""
+    compute_dressed_energy(c, Q; N=100, quadrature_rule=gausslobatto)
+
+Solve the dressed energy equation (I - ∫K)ε = k² - μ, where the chemical potential μ 
+is determined by the boundary condition ε(Q) = 0.
+
+# Arguments
+- `c`: Interaction strength.
+- `Q`: Fermi rapidity.
+- `N`: Number of quadrature points.
+- `quadrature_rule`: Function providing the quadrature nodes and weights.
+
+# Returns
+- `ε`: The dressed energy function ε(k).
+- `μ`: The determined chemical potential.
+"""
+function compute_dressed_energy(c, Q; N=default_quadrature_points(), quadrature_rule=default_quadrature_rule())
+    kernel(k, q) = c / π * (1 / (c^2 + (k - q)^2) + 1 / (c^2 + (k + q)^2))
+    kernel_traced(k) = 1 / π * (atan((k + Q) / c) - atan((k - Q) / c))
+
+    solver = ModifiedQuadratureSolver(quadrature_rule(N))
+
+    # ε(k) - ∫ K ε = k^2 - μ
+    # solve auxiliary equations: (I - K)ε₀ = k^2  and  (I - K)ε₁ = 1
+    eps0, _, _ = solve(solver, kernel, k -> k^2, kernel_traced, 0., Q)
+    eps1, _, _ = solve(solver, kernel, k -> 1.0, kernel_traced, 0., Q)
+
+    # enforce ε(Q) = 0 to find μ
+    μ = eps0(Q) / eps1(Q)
+
+    return (k) -> eps0(k) - μ * eps1(k), μ
+end
+
+"""
+    compute_chemical_potential(c, Q; N=100, quadrature_rule=gausslobatto, kwargs...)
+
+Helper function to calculate the chemical potential μ for a given interaction strength c and rapidity cutoff Q.
+"""
+function compute_chemical_potential(c, Q; N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), kwargs...)
+    _, μ = compute_dressed_energy(c, Q; kwargs...)
+    return μ
+end
+
+"""
+    get_particle_hole_spectrum(γ, c=1.; quadrature_rule=gausslobatto, N=100, num_points=100, kwargs...)
+
+Compute the excitation spectrum including hole branches (Type I) and particle branches (Type II).
+
+# Arguments
+- `γ`: Dimensionless interaction parameter.
+- `c`: Coupling constant.
+- `quadrature_rule`: Function providing the quadrature nodes and weights.
+- `N`: Number of quadrature points for the integral solvers.
+- `num_points`: Number of points to sample in the momentum/energy curves.
+- `kwargs`: Additional keyword arguments passed to internal solvers.
+
+# Returns
+- `p_h`: Momenta of the hole excitations (from 0 to 2kF).
+- `e_h`: Energies of the hole excitations.
+- `p_p`: Momenta of the particle excitations.
+- `e_p`: Energies of the particle excitations.
+- `kf`: The Fermi momentum P(Q).
+"""
+function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), num_points=100, kwargs...)
+    if isnothing(rho_gs) || isnothing(Q)
+        rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, kwargs...)
+    end
+
+    if isnothing(ε)
+        ε, _ = compute_dressed_energy(c, Q, kwargs...)
+    end
+
+    # dressed momentum P(k) = k + ∫ θ(k-q)ρ(q)dq
+    xs, ws = rescale(quadrature_rule(N)..., 0., Q)
+    θ(x) = 2 * atan(x / c)
+    P(k) = k + dot(ws, (θ.(k .- xs) .+ θ.(k .+ xs)) .* rho_gs.(xs))
+
+    kf = P(Q) # Fermi momentum
+
+    # grid for half the Fermi sea [0, Q]
+    k_h = range(0, Q, length=num_points)
+    P_vals = P.(k_h)
+    E_vals = -ε.(k_h) # energy is positive for excitations
+
+    # #1 removing particle from right side (Q -> 0)
+    # Momentum p = P(Q) - P(k)
+    p1 = kf .- P_vals
+
+    # #2 removing particle from left side (0 -> -Q)
+    # Momentum p = P(Q) - P(-k) = P(Q) + P(k)
+    p2 = kf .+ P_vals
+
+    # full range 0 -> 2kF
+    p_h = vcat(reverse(p1), p2)
+    e_h = vcat(reverse(E_vals), E_vals)
+
+    # Type II (Particle) branch (k > Q)
+    k_p = range(Q, 3 * Q, length=num_points)
+    p_p = P.(k_p) .- kf
+    e_p = ε.(k_p)
+
+    return p_h, e_h, p_p, e_p, kf
+end
+
+# what is this??
+function get_particle_hole_spectrum_alt(γ, c=1.; quadrature_rule=midpoint_quadrature, N=100, num_points=100, kwargs...)
+    rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, quadrature_rule=quadrature_rule, N=N, kwargs...)
+    ε, _ = compute_dressed_energy(c, Q; quadrature_rule=quadrature_rule, N=N, kwargs...)
+
+    xs, ws = rescale(quadrature_rule(N)..., 0., Q)
+    θ(x) = 2 * atan(x / c)
+    P(k) = k + dot(ws, (θ.(k .- xs) .+ θ.(k .+ xs)) .* rho_gs.(xs))
+
+    kf = P(Q)
+
+    k_h_grid = range(0, Q, length=num_points)
+    P_h_vals = P.(k_h_grid)
+    E_h_vals = -ε.(k_h_grid)
+
+    p1 = kf .- P_h_vals
+    p2 = kf .+ P_h_vals
+
+    p_h = vcat(reverse(p1), p2)
+    e_h = vcat(reverse(E_h_vals), E_h_vals)
+
+    k_max = find_zero(k -> P(k) - 3 * kf, (Q, 10 * Q))
+
+    k_p_grid = range(Q, k_max, length=num_points * 2)
+    p_p = P.(k_p_grid) .- kf
+    e_p = ε.(k_p_grid)
+
+    return p_h, e_h, p_p, e_p, kf
+end
+
+## solver interface
+
+"""
+    InfiniteLLProblem(c; γ=nothing, μ=nothing)
+
+Problem definition for the Lieb-Liniger model in the thermodynamic limit.
+- `c`: Interaction strength.
+- `γ`: Dimensionless interaction (c/n).
+- `μ`: Chemical potential.
+Exactly one of `γ` or `μ` must be provided.
+"""
+struct InfiniteLLProblem <: LLProblem
+    c::Float64
+    γ::Union{Nothing,Float64}
+    μ::Union{Nothing,Float64}
+    function InfiniteLLProblem(; c=1., γ=nothing, μ=nothing)
+        if (isnothing(γ) == isnothing(μ))
+            throw(ArgumentError("Must specify exactly one of γ (canonical) or μ (grandcanonical)."))
+        end
+        new(c, γ, μ)
+    end
+end
+
+"""
+    InfiniteLLState(prob, Q, rho_k, eps_k, n, e, μ)
+
+Result of an infinite system calculation.
+- `prob`: The originating problem.
+- `Q`: Fermi rapidity cutoff.
+- `rho_k`: Root distribution ρ(k).
+- `eps_k`: Dressed energy ε(k).
+- `n`: Calculated particle density.
+- `e`: Calculated energy density.
+- `μ`: Calculated chemical potential.
+"""
+struct InfiniteLLState <: LLState
+    prob::InfiniteLLProblem
+    Q::Float64
+    rho_k::Function
+    eps_k::Function
+    n::Float64
+    e::Float64
+    μ::Float64
+end
+
+"""
+    solve(p::InfiniteLLProblem; kwargs...)
+Orchestrates the solution for the infinite system.
+"""
+function solve(p::InfiniteLLProblem; kwargs...)
+    rho, e, n, Q = get_ground_state(γ=p.γ, μ=p.μ, c=p.c; kwargs...)
+    ε, μ_calc = compute_dressed_energy(p.c, Q; kwargs...)
+    return InfiniteLLState(p, Q, rho, ε, n, e, μ_calc)
+end
+
+energy(s::InfiniteLLState) = Inf
+energy_density(s::InfiniteLLState) = s.e
+average_particle_density(s::InfiniteLLState) = s.n
+particle_density(s::InfiniteLLState) = x -> s.n
+excitation_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
+quasimomentum_distribution(s::InfiniteLLState) = s.rho_k
+fermi_quasimomentum(s::InfiniteLLState) = s.Q
+
+
+
+
+
+
+
+
+
+
+
+
+
