@@ -1,15 +1,16 @@
 # LiebLinigerBetheAnsatz.jl
 
-`LiebLinigerBetheAnsatz` is an implementation of the Bethe Ansatz solution for the Lieb-Liniger model of 1D interacting bosons.
+`LiebLinigerBetheAnsatz` is an implementation of the Bethe Ansatz solution for the Lieb-Liniger model of interacting bosons in one dimension.
 
 $$
-H = -\sum_{j=1}^{N} \left[\frac{\partial^2}{\partial x_j^2} + 2c\sum_{j \lt i} \delta(x_j - x_i)\right]
+H = \sum_{j=1}^{N} \left[-\frac{\partial^2}{\partial x_j^2} + 2c\sum_{j \lt i} \delta(x_j - x_i)\right]
 $$
 
 where $\hbar = 2m = 1$. 
 
 ## Installation 
-```
+
+```julia
 using Pkg
 Pkg.add(url="https://github.com/20akshay00/LiebLinigerBetheAnsatz.jl")
 ```
@@ -22,7 +23,7 @@ Currently, the package supports computing ground state properties for the follow
 
 In the thermodynamic limit, the package solves the Lieb-Liniger integral equations. The problem can be specified using either the dimensionless interaction $\gamma = c/\rho$ or the chemical potential $\mu$.
 
-```
+```julia
 using LiebLinigerBetheAnsatz
 
 # solve using dimensionless interaction γ = c/ρ
@@ -37,8 +38,13 @@ n = average_particle_density(state)
 ```
 
 The excitation spectrum may also be extracted as follows.
-![spectrum](assets/particle-hole-gamma=0.1_c=1.png)
-```
+<br>
+
+<p align="center">
+  <img src="assets/particle-hole-gamma=0.1_c=1.png" width="500">
+</p>
+
+```julia
 # Compute Type I (holes) and Type II (particles) excitations
 p_h, E_h, p_p, E_p = excitation_spectrum(state, num_points=20)
 ```
@@ -47,7 +53,7 @@ p_h, E_h, p_p, E_p = excitation_spectrum(state, num_points=20)
 
 For systems with a fixed number of particles $N$, the package solves the discrete Bethe Ansatz equations. This supports both periodic and hard-wall boundary conditions.
 
-```
+```julia
 using LiebLinigerBetheAnsatz
 
 L, c, N = 10.0, 1.0, 5
@@ -61,7 +67,7 @@ Q = fermi_quasimomentum(state)
 ### 3. Non-uniform systems (LDA)
 For systems in an external potential $V(x)$, the package utilizes a Local Density Approximation (LDA) to find the energy and density profile.
 
-```
+```julia
 using LiebLinigerBetheAnsatz
 
 V(x) = 0.5x^2
