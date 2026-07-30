@@ -224,6 +224,10 @@ function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, n=
     K(x) = (2 * c) / (π * (c^2 + 4 * x^2)) #dθ/dx
     E(Λ) = -dot(ws, (K.(xs .- Λ) .+ K.(xs .+ Λ)) .* ε.(xs))
 
+    # alternately; solve σ(k) - 1/2π ∫ θ'(k - q) σ(q) dq = k 
+    # such that E(Λ) = 1/2π ∫ σ(q) θ(q - Λ) dq
+    # what we do is equivalent with the identification σ ≡ dε/dq
+
     # magnon branch (0 < k < ∞)
     Λs = c .* tan.(range(0, π / 2, length=num_points))
     p_m = P.(Λs)
