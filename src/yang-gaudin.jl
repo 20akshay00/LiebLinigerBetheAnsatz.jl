@@ -13,13 +13,12 @@ the dressed energy and phase shift formalism.
 - `kwargs`: Keyword arguments passed to ground state and dressed energy solvers.
 
 # Returns
-- `p_phys`: Physical momentum of the magnon branch.
-- `e_mag`: Excitation energy of the magnon branch.
-- `kf`: The Fermi momentum π * n.
+- `p_m`: Physical momentum of the magnon branch.
+- `e_m`: Excitation energy of the magnon branch.
 """
-function get_magnon_spectrum(γ, c=1.0; quadrature_rule=gausslobatto, N=100, num_points=100, rho_gs=nothing, Q=nothing, ε=nothing, n=nothing, kwargs...)
-    if any(isnothing.([rho_gs, Q, n]))
-        rho_gs, _, n, Q = get_ground_state(γ=γ, c=c, kwargs...)
+function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule, num_points=100, kwargs...)
+    if isnothing(rho_gs) || isnothing(Q)
+        rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, kwargs...)
     end
 
     if isnothing(ε)
@@ -27,26 +26,23 @@ function get_magnon_spectrum(γ, c=1.0; quadrature_rule=gausslobatto, N=100, num
     end
 
     xs, ws = rescale(quadrature_rule(N)..., 0., Q)
+    n = average_particle_density(rho_gs)
     kf = π * n
 
+    # dressed momentum P(Λ) = kf + ∫ θ(q - Λ)ρ(q)dq
     θ(x) = 2 * atan(2 * x / c)
+    P(Λ) = kf + dot(ws, (θ.(xs .- Λ) .- θ.(xs .+ Λ)) .* rho_gs.(xs)) # defined as P(Λ) - P(∞)
 
-    # kernel is the derivative of theta
-    K(x) = (2 * c) / (π * (c^2 + 4 * x^2))
+    # dressed energy E(Λ) = -∫K(q - Λ)ε(q) dq    
+    K(x) = (2 * c) / (π * (c^2 + 4 * x^2)) #dθ/dx
+    E(Λ) = -dot(ws, (K.(xs .- Λ) .+ K.(xs .+ Λ)) .* ε.(xs))
 
+    # magnon branch (0 < k < ∞)
     Λs = c .* tan.(range(0, π / 2, length=num_points))
+    p_m = P.(Λs)
+    e_m = E.(Λs)
 
-    # compute P relative to the limit at Inf to fix the zero point
-    # P(\infty) = kf + pi*n = 2kf.
-    # so we define p_phys = 2kf - P_raw
-    p_raw = [kf - dot(ws, (θ.(xs .- Λ) .- θ.(xs .+ Λ)) .* rho_gs.(xs)) for Λ in Λs]
-    e_mag = [-dot(ws, (K.(xs .- Λ) .+ K.(xs .+ Λ)) .* ε.(xs)) for Λ in Λs]
-
-    # shift momentum so gapless point is at p=0
-    # P_raw goes from kf (at L=0) to 2kf (at L=inf)
-    p_phys = abs.(p_raw[end] .- p_raw)
-
-    return p_phys, e_mag, kf
+    return p_m, e_m
 end
 
 magnon_spectrum(s::InfiniteLLState; kwargs...) = get_magnon_spectrum(s.prob.c / s.n, c=s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, n=s.n, kwargs...)

@@ -124,6 +124,7 @@ function compute_dressed_energy(c, Q; N=default_quadrature_points(), quadrature_
     # enforce ε(Q) = 0 to find μ
     μ = eps0(Q) / eps1(Q)
 
+    # ε(k) = ε(-k)
     return (k) -> eps0(k) - μ * eps1(k), μ
 end
 
@@ -155,7 +156,6 @@ Compute the excitation spectrum including hole branches (Type I) and particle br
 - `e_h`: Energies of the hole excitations.
 - `p_p`: Momenta of the particle excitations.
 - `e_p`: Energies of the particle excitations.
-- `kf`: The Fermi momentum P(Q).
 """
 function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), num_points=100, kwargs...)
     if isnothing(rho_gs) || isnothing(Q)
@@ -166,35 +166,26 @@ function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=noth
         ε, _ = compute_dressed_energy(c, Q, kwargs...)
     end
 
-    # dressed momentum P(k) = k + ∫ θ(k-q)ρ(q)dq
     xs, ws = rescale(quadrature_rule(N)..., 0., Q)
+    n = average_particle_density(rho_gs)
+    kf = π * n
+
+    # dressed momentum P(k) = k + ∫ θ(k-q)ρ(q)dq
     θ(x) = 2 * atan(x / c)
     P(k) = k + dot(ws, (θ.(k .- xs) .+ θ.(k .+ xs)) .* rho_gs.(xs))
 
-    kf = P(Q) # Fermi momentum
-
-    k_h = range(0, Q, length=num_points)
-    P_vals = P.(k_h)
-    E_vals = -ε.(k_h) # energy is positive for excitations
-
-    # removing particle from right side (Q -> 0)
-    # p = P(Q) - P(k)
-    p1 = kf .- P_vals
-
-    # removing particle from left side (0 -> -Q)
-    # p = P(Q) - P(-k) = P(Q) + P(k)
-    p2 = kf .+ P_vals
-
-    # full range 0 -> 2kF
-    p_h = vcat(reverse(p1), p2)
-    e_h = vcat(reverse(E_vals), E_vals)
-
-    # Type II (Particle) branch (k > Q)
+    # Type I (particle) branch (k > Q)
     k_p = range(Q, 3 * Q, length=num_points)
     p_p = P.(k_p) .- kf
     e_p = ε.(k_p)
 
-    return p_h, e_h, p_p, e_p, kf
+    # Type II (hole) branch (k ∈ [Q, -Q])
+    # maps to [0, 2kf] physical momenta since P(±Q) = ±kf = ±πn
+    k_h = range(Q, -Q, length=2 * num_points)
+    p_h = kf .- P.(k_h)
+    e_h = -ε.(k_h)
+
+    return p_h, e_h, p_p, e_p
 end
 
 ## solver interface
