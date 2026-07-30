@@ -220,7 +220,7 @@ function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=
 
     # dressed momentum P(Λ) = kf + ∫ θ(q - Λ)ρ(q)dq
     θ(x) = 2 * atan(2 * x / c)
-    P(Λ) = kf + dot(ws, (θ.(xs .- Λ) .- θ.(xs .+ Λ)) .* rho_gs.(xs)) # defined as P(Λ) - P(∞)
+    P(Λ) = kf + dot(ws, (θ.(xs .- Λ) .- θ.(xs .+ Λ)) .* rho_gs.(xs)) # defined s.t. P(∞)=0
 
     # dressed energy E(Λ) = -∫K(q - Λ)ε(q) dq    
     K(x) = (2 * c) / (π * (c^2 + 4 * x^2)) #dθ/dx
