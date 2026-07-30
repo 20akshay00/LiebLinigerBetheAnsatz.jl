@@ -28,8 +28,8 @@ function particle_density end
 """
     excitation_spectrum(s::LLState; kwargs...)
 Returns the elementary excitation branches: `(p_h, e_h, p_p, e_p, k_max)`.
-- `p_h`, `e_h`: Momentum and Energy of the hole branch.
-- `p_p`, `e_p`: Momentum and Energy of the particle branch.
+- `p_h`, `e_h`: Momentum and energy of the hole branch.
+- `p_p`, `e_p`: Momentum and energy of the particle branch.
 - `k_max`: Maximum rapidity (analogous to kf).
 """
 function excitation_spectrum end

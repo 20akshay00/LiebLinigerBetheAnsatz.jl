@@ -1,5 +1,5 @@
 """
-    precompute_chebyshev_eos(c, μ_max; atol=1e-11, max_nodes=512)
+    _construct_chebyshev_eos(c, μ_max; atol=1e-11, max_nodes=512)
 
 Adaptively constructs Chebyshev interpolations for ρ(μ) and e(μ) (i.e, the Equation of State).
 
@@ -8,13 +8,19 @@ Adaptively constructs Chebyshev interpolations for ρ(μ) and e(μ) (i.e, the Eq
 - `μ_max`: Maximum chemical potential for the window.
 - `atol`: Tolerance for the last Chebyshev coefficient.
 - `max_nodes`: Limit on the number of nodes.
+
+# Returns
+- `rho`: Interpolant surrogate for particle density 
+- `e`: Interpolant surrogate for energy density
 """
 function _construct_chebyshev_eos(c::Float64, μ_max::Float64; atol=1e-5, max_nodes=512)
     μ_min, n = 1e-8, 16
     while n <= max_nodes
         nodes = chebpoints(n, μ_min, μ_max)
-        vals = [(st = solve(InfiniteLLProblem(c=c, μ=m));
-        (average_particle_density(st), energy_density(st))) for m in nodes]
+        vals = [
+            (st=solve(InfiniteLLProblem(c=c, μ=m));
+                (average_particle_density(st), energy_density(st))) for m in nodes
+        ]
 
         rho_p = chebinterp(first.(vals), μ_min, μ_max)
         e_p = chebinterp(last.(vals), μ_min, μ_max)
@@ -34,7 +40,7 @@ end
 """
     NonUniformLLProblem(; c, V, N=nothing, μ=nothing, domain=(-1.0, 1.0), ρ_eos=nothing, e_eos=nothing)
 
-Problem definition for a Lieb-Liniger gas in an external potential V(x) using LDA.
+Problem definition for the Lieb-Liniger model in an external potential V(x).
 
 # Arguments
 - `c`: Interaction strength.
@@ -81,7 +87,7 @@ end
 """
     solve(p::NonUniformLLProblem; maxiter=50, atol=1e-10)
 
-Solves the NonUniform problem via LDA integration.
+Solves the non-uniform problem using a Local Density Approximation (LDA).
 
 # Arguments
 - `p`: The problem definition.

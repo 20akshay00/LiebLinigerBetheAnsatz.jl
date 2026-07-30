@@ -1,14 +1,14 @@
 # solves f(x) - λ ∫([K(x,y) + K(x,-y)] f(y), 0, Q) dy = g(x)
-# assumes that ρ(k) = ρ(-k) always
 """
     solve_quasimomentum_distribution(c, Q; N=100, quadrature_rule=gausslobatto)
 
-Solve the Lieb-Liniger integral equation for the root density distribution ρ(k) on the interval [0, Q].
-Uses a symmetrized kernel to account for the parity of the distribution.
+Solve the Lieb-Liniger integral equation [ρ(x) - 1/2π ∫([K(x,y) + K(x,-y)] ρ(y), 0, Q) dy = 1/2π] for the root density distribution ρ(k) on the interval [0, Q].
+
+Uses a symmetrized kernel to improve quadrature accuracy (assuming ρ(k) = ρ(-k)!).
 
 # Arguments
-- `c`: Interaction strength (coupling constant).
-- `Q`: Fermi rapidity (integration cutoff).
+- `c`: Interaction strength.
+- `Q`: Fermi rapidity.
 - `N`: Number of quadrature points for the integral solver.
 - `quadrature_rule`: Function providing the quadrature nodes and weights.
 
@@ -97,8 +97,7 @@ end
 """
     compute_dressed_energy(c, Q; N=100, quadrature_rule=gausslobatto)
 
-Solve the dressed energy equation (I - ∫K)ε = k² - μ, where the chemical potential μ 
-is determined by the boundary condition ε(Q) = 0.
+Solve the dressed energy equation  ε(k) - ∫ K(k - q) ε(q) dq = k^2 - μ , where the chemical potential μ is determined from the boundary condition ε(Q) = ε₀(Q) - μ ε₁(Q) = 0.
 
 # Arguments
 - `c`: Interaction strength.
@@ -107,7 +106,7 @@ is determined by the boundary condition ε(Q) = 0.
 - `quadrature_rule`: Function providing the quadrature nodes and weights.
 
 # Returns
-- `ε`: The dressed energy function ε(k).
+- `ε`: The dressed energy function.
 - `μ`: The determined chemical potential.
 """
 function compute_dressed_energy(c, Q; N=default_quadrature_points(), quadrature_rule=default_quadrature_rule())
@@ -116,16 +115,17 @@ function compute_dressed_energy(c, Q; N=default_quadrature_points(), quadrature_
 
     solver = ModifiedQuadratureSolver(quadrature_rule(N))
 
-    # ε(k) - ∫ K ε = k^2 - μ
-    # solve auxiliary equations: (I - K)ε₀ = k^2  and  (I - K)ε₁ = 1
-    eps0, _, _ = solve(solver, kernel, k -> k^2, kernel_traced, 0., Q)
-    eps1, _, _ = solve(solver, kernel, k -> 1.0, kernel_traced, 0., Q)
+    # solve auxiliary equations:
+    #   ε₀(k) - ∫ K(k, q) ε₀(q) dq = k²
+    #   ε₁(k) - ∫ K(k, q) ε₁(q) dq = 1
+    ε₀, _, _ = solve(solver, kernel, k -> k^2, kernel_traced, 0., Q)
+    ε₁, _, _ = solve(solver, kernel, k -> 1.0, kernel_traced, 0., Q)
 
+    # ε(k) - ∫ K(k - q) ε(q) dq = k^2 - μ
     # enforce ε(Q) = 0 to find μ
-    μ = eps0(Q) / eps1(Q)
+    μ = ε₀(Q) / ε₁(Q)
 
-    # ε(k) = ε(-k)
-    return (k) -> eps0(k) - μ * eps1(k), μ
+    return (k) -> ε₀(k) - μ * ε₁(k), μ
 end
 
 """
@@ -141,7 +141,7 @@ end
 """
     get_particle_hole_spectrum(γ, c=1.; quadrature_rule=gausslobatto, N=100, num_points=100, kwargs...)
 
-Compute the excitation spectrum including hole branches (Type I) and particle branches (Type II).
+Calculate the particle and hole excitation spectrum for the Lieb-Liniger model.
 
 # Arguments
 - `γ`: Dimensionless interaction parameter.
@@ -180,13 +180,63 @@ function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=noth
     e_p = ε.(k_p)
 
     # Type II (hole) branch (k ∈ [Q, -Q])
-    # maps to [0, 2kf] physical momenta since P(±Q) = ±kf = ±πn
+    # maps to [0, 2kf] momentum since P(±Q) = ±kf = ±πn
     k_h = range(Q, -Q, length=2 * num_points)
-    p_h = kf .- P.(k_h)
+    p_h = kf .- P.(k_h) # shift to remain positive
     e_h = -ε.(k_h)
 
     return p_h, e_h, p_p, e_p
 end
+
+get_particle_hole_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
+
+"""
+    get_magnon_spectrum(γ, c=1.0; quadrature_rule=gausslobatto, N=100, num_points=100, kwargs...)
+
+Calculate the magnon excitation spectrum for the Yang-Gaudin model.
+
+# Arguments
+- `γ`: Dimensionless interaction strength (c/n).
+- `c`: Coupling constant.
+- `quadrature_rule`: Integration rule for the solvers.
+- `N`: Number of quadrature points.
+- `num_points`: Number of points used to sample the spectrum.
+- `kwargs`: Keyword arguments passed to ground state and dressed energy solvers.
+
+# Returns
+- `p_m`: Physical momentum of the magnon branch.
+- `e_m`: Excitation energy of the magnon branch.
+"""
+function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule, num_points=100, kwargs...)
+    if isnothing(rho_gs) || isnothing(Q)
+        rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, kwargs...)
+    end
+
+    if isnothing(ε)
+        ε, _ = compute_dressed_energy(c, Q; kwargs...)
+    end
+
+    xs, ws = rescale(quadrature_rule(N)..., 0., Q)
+    n = average_particle_density(rho_gs)
+    kf = π * n
+
+    # dressed momentum P(Λ) = kf + ∫ θ(q - Λ)ρ(q)dq
+    θ(x) = 2 * atan(2 * x / c)
+    P(Λ) = kf + dot(ws, (θ.(xs .- Λ) .- θ.(xs .+ Λ)) .* rho_gs.(xs)) # defined as P(Λ) - P(∞)
+
+    # dressed energy E(Λ) = -∫K(q - Λ)ε(q) dq    
+    K(x) = (2 * c) / (π * (c^2 + 4 * x^2)) #dθ/dx
+    E(Λ) = -dot(ws, (K.(xs .- Λ) .+ K.(xs .+ Λ)) .* ε.(xs))
+
+    # magnon branch (0 < k < ∞)
+    Λs = c .* tan.(range(0, π / 2, length=num_points))
+    p_m = P.(Λs)
+    e_m = E.(Λs)
+
+    return p_m, e_m
+end
+
+get_magnon_spectrum(s::InfiniteLLState; kwargs...) = get_magnon_spectrum(s.prob.c / s.n, c=s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, n=s.n, kwargs...)
 
 ## solver interface
 
@@ -214,14 +264,14 @@ end
 """
     InfiniteLLState(prob, Q, rho_k, eps_k, n, e, μ)
 
-Result of an infinite system calculation.
-- `prob`: The originating problem.
+Result of a thermodynamic limit calculation.
+- `prob`: The originating `InfiniteLLProblem`.
 - `Q`: Fermi rapidity cutoff.
 - `rho_k`: Root distribution ρ(k).
 - `eps_k`: Dressed energy ε(k).
-- `n`: Calculated particle density.
-- `e`: Calculated energy density.
-- `μ`: Calculated chemical potential.
+- `n`: Particle density.
+- `e`: Energy density.
+- `μ`: Chemical potential.
 """
 struct InfiniteLLState <: LLState
     prob::InfiniteLLProblem
@@ -233,10 +283,6 @@ struct InfiniteLLState <: LLState
     μ::Float64
 end
 
-"""
-    solve(p::InfiniteLLProblem; kwargs...)
-Orchestrates the solution for the infinite system.
-"""
 function solve(p::InfiniteLLProblem; kwargs...)
     rho, e, n, Q = get_ground_state(γ=p.γ, μ=p.μ, c=p.c; kwargs...)
     ε, μ_calc = compute_dressed_energy(p.c, Q; kwargs...)
@@ -247,7 +293,6 @@ energy(s::InfiniteLLState) = Inf
 energy_density(s::InfiniteLLState) = s.e
 average_particle_density(s::InfiniteLLState) = s.n
 particle_density(s::InfiniteLLState) = x -> s.n
-excitation_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
 quasimomentum_distribution(s::InfiniteLLState) = s.rho_k
 fermi_quasimomentum(s::InfiniteLLState) = s.Q
 

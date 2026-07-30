@@ -1,18 +1,4 @@
 """
-    solve_quasimomentum_distribution(c, L, ns; bc=:hardwall, maxiter=100, atol=1e-11)
-
-Low-level Newton solver for the discrete Bethe equations given a fixed set of quantum numbers `ns`.
-
-# Arguments
-- `c`: Coupling constant.
-- `L`: System length.
-- `ns`: Vector of quantum numbers defining the state.
-- `bc`: Boundary conditions - [:hardwall, :periodic].
-- `maxiter`: Maximum iterations for Newton's method.
-- `atol`: Absolute tolerance for convergence.
-"""
-
-"""
     get_finite_ground_state(; L, c, N=nothing, μ=nothing, bc=:hardwall)
 
 Orchestrator that finds the ground state by handling either a fixed particle number `N` 
@@ -24,7 +10,7 @@ function get_finite_ground_state(; L, c, N=nothing, μ=nothing, bc=:hardwall)
         k, G, E = solve_quasimomentum_distribution(c, L, ns; bc=bc)
         return k, G, E, N
     else
-        # Find N such that E(N+1) - E(N) > μ
+        # find N such that E(N+1) - E(N) > μ
         curr_N = 1
         E_prev = 0.0
         while true
@@ -42,8 +28,6 @@ end
     solve_quasimomentum_distribution(c, L, ns; bc=:hardwall, maxiter=50, atol=1e-10, relaxation=0.8)
 
 Solves the Bethe equations for a finite Lieb-Liniger system using a damped Newton method.
-This implementation exploits the symmetry of the interaction kernels to minimize 
-redundant calculations while maintaining physical readability.
 
 # Arguments
 - `c`: Coupling constant.
@@ -53,6 +37,11 @@ redundant calculations while maintaining physical readability.
 - `maxiter`: Maximum Newton iterations.
 - `atol`: Absolute tolerance for convergence.
 - `relaxation`: Damping factor (α) for stability at high particle counts.
+
+# Returns
+- `k`: List of quasi-momenta in the ground state.
+- `G`: Gaudin matrix (Jacobian of the Bethe equations).
+- `E`: Total energy.
 """
 function solve_quasimomentum_distribution(c, L, ns; bc=:hardwall, maxiter=50, atol=1e-10, relaxation=0.8)
     N = length(ns)
@@ -110,7 +99,7 @@ function solve_quasimomentum_distribution(c, L, ns; bc=:hardwall, maxiter=50, at
             end
         end
 
-        # Newton iteration using Cholesky for stability in symmetric systems
+        # Newton iteration
         dk = cholesky(Symmetric(G)) \ F
         k .-= dk * relaxation
         step_norm = sqrt(sum(x -> x^2, dk))
@@ -126,15 +115,13 @@ end
 """
     FiniteLLProblem(L, c; N=nothing, μ=nothing, bc=:hardwall, n_q=nothing)
 
-Problem definition for a finite number of Lieb-Liniger particles.
-
-# Arguments
-- `L::Float64`: The spatial length of the system.
-- `c::Float64`: The coupling constant (interaction strength).
-- `N::Union{Nothing, Int}`: Number of particles. Specify either `N` or `μ`.
-- `μ::Union{Nothing, Float64}`: Chemical potential. If provided, the solver finds the ground state particle number `N`.
-- `bc::Symbol`: Boundary condition, either `:hardwall` (box) or `:periodic`.
-- `n_q::Union{Nothing, Vector{Float64}}`: Custom quantum numbers. If `nothing`, defaults to the ground state:
+Problem definition for the Lieb-Liniger model with finite system size.
+- `L`: The spatial extent of the system.
+- `c`: Interaction strength.
+- `N`: Number of particles. Specify either `N` or `μ`.
+- `μ`: Chemical potential. Specify either `N` or `μ`.
+- `bc`: Boundary condition, either `:hardwall` (box) or `:periodic`.
+- `n_q`: Custom quantum numbers. If `nothing`, defaults to the ground state:
     - `:hardwall`: `1, 2, ..., N`
     - `:periodic`: centered integers or half-integers `-(N-1)/2, ..., (N-1)/2`.
 """
@@ -171,52 +158,21 @@ struct FiniteLLProblem <: LLProblem
 end
 
 """
-    FiniteLLState(prob, k, G, N, E)
+    get_particle_hole_spectrum(s::FiniteLLState; num_points=20)
 
-The calculated state of a finite Lieb-Liniger system.
-
-# Arguments
-- `prob`: The originating `FiniteLLProblem`.
-- `k`: Vector of solved quasi-momenta (rapidities).
-- `G`: Gaudin matrix (Jacobian of the Bethe equations).
-- `N`: Actual number of particles in this state.
-- `E`: Total energy of the state.
-"""
-struct FiniteLLState <: LLState
-    prob::FiniteLLProblem
-    k::Vector{Float64}
-    G::Matrix{Float64}
-    N::Int
-    E::Float64
-end
-
-"""
-    solve(p::FiniteLLProblem; kwargs...)
-
-High-level solver that returns a `FiniteLLState`.
-"""
-function solve(p::FiniteLLProblem; kwargs...)
-    k, G, E, N = get_finite_ground_state(L=p.L, c=p.c, N=p.N, μ=p.μ, bc=p.bc)
-    return FiniteLLState(p, k, G, N, E)
-end
-
-energy(s::FiniteLLState) = s.E
-energy_density(s::FiniteLLState) = s.E / s.prob.L
-average_particle_density(s::FiniteLLState) = s.N / s.prob.L
-
-# particle_density(s::FiniteLLState)
-
-"""
-    excitation_spectrum(s::FiniteLLState; num_points=20)
-
-Calculates the elementary excitation branches (Type I hole and Type II particle) 
-for the finite system. Returns (p_h, e_h, p_p, e_p, k_max).
+Calculate the particle and hole excitation spectrum for the Lieb-Liniger model.
 
 # Arguments
 - `s`: The ground state `FiniteLLState`.
 - `num_points`: Number of discrete shifts to compute for the branches.
+
+# Returns
+- `p_h`: Momenta of the hole excitations (from 0 to 2kF).
+- `e_h`: Energies of the hole excitations.
+- `p_p`: Momenta of the particle excitations.
+- `e_p`: Energies of the particle excitations.
 """
-function excitation_spectrum(s::FiniteLLState; num_points=20)
+function get_particle_hole_spectrum(s::FiniteLLState; num_points=20)
     p = s.prob
     E_gs = s.E
     L, c, bc, N = p.L, p.c, p.bc, s.N
@@ -246,9 +202,35 @@ function excitation_spectrum(s::FiniteLLState; num_points=20)
     p_h = [r[1] for r in hole_res]
     e_h = [r[2] for r in hole_res]
 
-    return p_h, e_h, p_p, e_p, maximum(s.k)
+    return p_h, e_h, p_p, e_p
 end
 
+
+"""
+    FiniteLLState(prob, k, G, N, E)
+
+Result of a finite system calculation.
+- `prob`: The originating `FiniteLLProblem`.
+- `k`: Vector of solved quasi-momenta (rapidities).
+- `G`: Gaudin matrix (Jacobian of the Bethe equations).
+- `N`: Particle number
+- `E`: Total energy.
+"""
+struct FiniteLLState <: LLState
+    prob::FiniteLLProblem
+    k::Vector{Float64}
+    G::Matrix{Float64}
+    N::Int
+    E::Float64
+end
+
+function solve(p::FiniteLLProblem; kwargs...)
+    k, G, E, N = get_finite_ground_state(L=p.L, c=p.c, N=p.N, μ=p.μ, bc=p.bc)
+    return FiniteLLState(p, k, G, N, E)
+end
+
+energy(s::FiniteLLState) = s.E
+energy_density(s::FiniteLLState) = s.E / s.prob.L
+average_particle_density(s::FiniteLLState) = s.N / s.prob.L
 quasimomentum_distribution(s::FiniteLLState) = s.k
 fermi_quasimomentum(s::FiniteLLState) = maximum(s.k)
-
