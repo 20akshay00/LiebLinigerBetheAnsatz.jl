@@ -191,6 +191,7 @@ end
     get_magnon_spectrum(γ, c=1.0; quadrature_rule=gausslobatto, N=100, num_points=100, kwargs...)
 
 Calculate the magnon excitation spectrum for the Yang-Gaudin model.
+# https://arxiv.org/pdf/2109.15028
 
 # Arguments
 - `γ`: Dimensionless interaction strength (c/n).
