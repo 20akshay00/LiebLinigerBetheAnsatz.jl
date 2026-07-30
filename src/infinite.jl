@@ -157,8 +157,8 @@ Calculate the particle and hole excitation spectrum for the Lieb-Liniger model.
 - `p_p`: Momenta of the particle excitations.
 - `e_p`: Energies of the particle excitations.
 """
-function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), num_points=100, kwargs...)
-    if isnothing(rho_gs) || isnothing(Q)
+function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, n=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), num_points=100, kwargs...)
+    if isnothing(rho_gs) || isnothing(Q) || isnothing(n)
         rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, kwargs...)
     end
 
@@ -167,7 +167,6 @@ function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=noth
     end
 
     xs, ws = rescale(quadrature_rule(N)..., 0., Q)
-    n = average_particle_density(rho_gs)
     kf = π * n
 
     # dressed momentum P(k) = k + ∫ θ(k-q)ρ(q)dq
@@ -205,9 +204,9 @@ Calculate the magnon excitation spectrum for the Yang-Gaudin model.
 - `p_m`: Physical momentum of the magnon branch.
 - `e_m`: Excitation energy of the magnon branch.
 """
-function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule, num_points=100, kwargs...)
-    if isnothing(rho_gs) || isnothing(Q)
-        rho_gs, _, _, Q = get_ground_state(γ=γ, c=c, kwargs...)
+function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, n=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule, num_points=100, kwargs...)
+    if isnothing(rho_gs) || isnothing(Q) || isnothing(n)
+        rho_gs, _, n, Q = get_ground_state(γ=γ, c=c, kwargs...)
     end
 
     if isnothing(ε)
@@ -215,7 +214,6 @@ function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=
     end
 
     xs, ws = rescale(quadrature_rule(N)..., 0., Q)
-    n = average_particle_density(rho_gs)
     kf = π * n
 
     # dressed momentum P(Λ) = kf + ∫ θ(q - Λ)ρ(q)dq
@@ -291,7 +289,7 @@ average_particle_density(s::InfiniteLLState) = s.n
 particle_density(s::InfiniteLLState) = x -> s.n
 quasimomentum_distribution(s::InfiniteLLState) = s.rho_k
 fermi_quasimomentum(s::InfiniteLLState) = s.Q
-get_particle_hole_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
+get_particle_hole_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; n=s.n, rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
 get_magnon_spectrum(s::InfiniteLLState; kwargs...) = get_magnon_spectrum(s.prob.c / s.n, c=s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, n=s.n, kwargs...)
 
 
