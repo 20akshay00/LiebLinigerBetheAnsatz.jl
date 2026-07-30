@@ -176,19 +176,17 @@ function get_particle_hole_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=noth
 
     # Type I (particle) branch (k > Q)
     k_p = range(Q, 3 * Q, length=num_points)
-    p_p = P.(k_p) .- kf
+    p_p = P.(k_p) .- kf # add a hole w/ energy 0
     e_p = ε.(k_p)
 
     # Type II (hole) branch (k ∈ [Q, -Q])
     # maps to [0, 2kf] momentum since P(±Q) = ±kf = ±πn
     k_h = range(Q, -Q, length=2 * num_points)
-    p_h = kf .- P.(k_h) # shift to remain positive
+    p_h = kf .- P.(k_h) # add a particle w/ energy 0
     e_h = -ε.(k_h)
 
     return p_h, e_h, p_p, e_p
 end
-
-get_particle_hole_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
 
 """
     get_magnon_spectrum(γ, c=1.0; quadrature_rule=gausslobatto, N=100, num_points=100, kwargs...)
@@ -235,8 +233,6 @@ function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, N=
 
     return p_m, e_m
 end
-
-get_magnon_spectrum(s::InfiniteLLState; kwargs...) = get_magnon_spectrum(s.prob.c / s.n, c=s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, n=s.n, kwargs...)
 
 ## solver interface
 
@@ -295,11 +291,8 @@ average_particle_density(s::InfiniteLLState) = s.n
 particle_density(s::InfiniteLLState) = x -> s.n
 quasimomentum_distribution(s::InfiniteLLState) = s.rho_k
 fermi_quasimomentum(s::InfiniteLLState) = s.Q
-
-
-
-
-
+get_particle_hole_spectrum(s::InfiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.c / s.n, s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, kwargs...)
+get_magnon_spectrum(s::InfiniteLLState; kwargs...) = get_magnon_spectrum(s.prob.c / s.n, c=s.prob.c; rho_gs=s.rho_k, Q=s.Q, ε=s.eps_k, n=s.n, kwargs...)
 
 
 

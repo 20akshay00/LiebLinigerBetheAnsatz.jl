@@ -163,7 +163,11 @@ end
 Calculate the particle and hole excitation spectrum for the Lieb-Liniger model.
 
 # Arguments
-- `s`: The ground state `FiniteLLState`.
+- `L`: The spatial extent of the system.
+- `c`: Interaction strength.
+- `bc`: Boundary condition, either `:hardwall` (box) or `:periodic`.
+- `N`: Number of particles.
+- `E_gs`: Ground state energy.
 - `num_points`: Number of discrete shifts to compute for the branches.
 
 # Returns
@@ -172,39 +176,44 @@ Calculate the particle and hole excitation spectrum for the Lieb-Liniger model.
 - `p_p`: Momenta of the particle excitations.
 - `e_p`: Energies of the particle excitations.
 """
-function get_particle_hole_spectrum(s::FiniteLLState; num_points=20)
-    p = s.prob
-    E_gs = s.E
-    L, c, bc, N = p.L, p.c, p.bc, s.N
-
+function get_particle_hole_spectrum(L, c, bc, N, E_gs; num_points=20)
     # ground state total momentum (typically 0)
-    ns_gs = bc == :periodic ? collect(1:N) .- (N + 1) / 2 : collect(1:N)
+    ns_gs = bc == :periodic ? (collect(1:N) .- (N + 1) / 2) : collect(1:N)
     P_gs = (2π / L) * sum(ns_gs)
 
-    # function to calculate E and P for a shift of the outermost particle
-    function get_shift_data(dn)
-        ns_exc = copy(ns_gs)
-        ns_exc[end] += dn
-        k_exc, _, E_exc = solve_quasimomentum_distribution(c, L, ns_exc; bc=bc)
+    # function to evaluate ΔP and ΔE for a given quantum number configuration
+    function evaluate_excitation(ns_exc)
+        # sorting is necessary to keep rapidities ordered for the solver
+        sort!(ns_exc)
+
+        _, _, E_exc = solve_quasimomentum_distribution(c, L, ns_exc; bc=bc)
         ΔP = (2π / L) * sum(ns_exc) - P_gs
         ΔE = E_exc - E_gs
+
         return ΔP, ΔE
     end
 
-    # construct branches
-    particle_res = [get_shift_data(dn) for dn in 1:num_points]
-    p_p = [r[1] for r in particle_res]
-    e_p = [r[2] for r in particle_res]
+    # Type I (particle) branch (k > Q)
+    ns_exc = copy(ns_gs)
+    particle_res = map(1:num_points) do dn
+        ns_exc[end] += 1
+        evaluate_excitation(ns_exc)
+    end
+    p_p = first.(particle_res)
+    e_p = last.(particle_res)
 
-    # hole branch is limited by the distance to the next quantum number
-    max_h = bc == :periodic ? num_points : min(num_points, N - 1)
-    hole_res = [get_shift_data(-dn) for dn in 1:max_h]
-    p_h = [r[1] for r in hole_res]
-    e_h = [r[2] for r in hole_res]
+    # Type II (hole) branch (k ∈ [Q, -Q])
+    depths = unique(round.(Int, range(0, N - 1, length=num_points)))
+    hole_res = map(depths) do depth
+        ns_exc = copy(ns_gs)
+        ns_exc[N-depth] = ns_gs[end] + 1
+        evaluate_excitation(ns_exc)
+    end
+    p_h = first.(hole_res)
+    e_h = last.(hole_res)
 
     return p_h, e_h, p_p, e_p
 end
-
 
 """
     FiniteLLState(prob, k, G, N, E)
@@ -234,3 +243,4 @@ energy_density(s::FiniteLLState) = s.E / s.prob.L
 average_particle_density(s::FiniteLLState) = s.N / s.prob.L
 quasimomentum_distribution(s::FiniteLLState) = s.k
 fermi_quasimomentum(s::FiniteLLState) = maximum(s.k)
+get_particle_hole_spectrum(s::FiniteLLState; kwargs...) = get_particle_hole_spectrum(s.prob.L, s.prob.c, s.prob.bc, s.N, s.E; kwargs...)
