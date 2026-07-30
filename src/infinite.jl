@@ -205,7 +205,7 @@ Calculate the magnon excitation spectrum for the Yang-Gaudin model.
 - `p_m`: Physical momentum of the magnon branch.
 - `e_m`: Excitation energy of the magnon branch.
 """
-function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, n=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule, num_points=100, kwargs...)
+function get_magnon_spectrum(γ, c=1.; rho_gs=nothing, Q=nothing, ε=nothing, n=nothing, N=default_quadrature_points(), quadrature_rule=default_quadrature_rule(), num_points=100, kwargs...)
     if isnothing(rho_gs) || isnothing(Q) || isnothing(n)
         rho_gs, _, n, Q = get_ground_state(γ=γ, c=c, kwargs...)
     end

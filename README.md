@@ -46,7 +46,7 @@ The excitation spectrum may also be extracted as follows.
 
 ```julia
 # compute Type I (holes) and Type II (particles) excitations
-p_h, E_h, p_p, E_p = excitation_spectrum(state, num_points=20)
+p_h, E_h, p_p, E_p = get_particle_hole_spectrum(state, num_points=20)
 ```
 
 ### 2. Finite system
